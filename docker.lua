@@ -7,7 +7,7 @@
 ]]
 
 -- helper functions
-function deepcopy(orig)
+local function deepcopy(orig)
     local orig_type = type(orig)
     local copy
     if orig_type == 'table' then
@@ -20,6 +20,24 @@ function deepcopy(orig)
         copy = orig
     end
     return copy
+end
+
+-- tokenise
+local function tokenise( ... )
+    local sLine = table.concat( { ... }, " " )
+	local tWords = {}
+    local bQuoted = false
+    for match in string.gmatch( sLine .. "\"", "(.-)\"" ) do
+        if bQuoted then
+            table.insert( tWords, match )
+        else
+            for m in string.gmatch( match, "[^ \t]+" ) do
+                table.insert( tWords, m )
+            end
+        end
+        bQuoted = not bQuoted
+    end
+    return tWords
 end
 
 -- split a string
@@ -41,7 +59,7 @@ local json = dofile("/docker/json.lua")
 local base64 = dofile("/docker/base64.lua")
 
 -- The JavaScript-like syntax is real.
-docker = {}
+local docker = {}
 docker.fs = {}
 docker.shell = {}
 docker.version = "0.1.1"
@@ -104,20 +122,10 @@ docker.genFS = function(this, file)
   end
 end
 
--- shell
-docker.shell.shellstack = "/"
-docker.shell.setdir = function (this, dir)
-  this.shell.shellstack = dir
-end
-
-docker.shell.dir = function (this)
-  return tostring(this.shell.shellstack)
-end
-
 docker.fs.exists = function (this, f)
-  this:dPrint("fs: checking if '"..tostring(fs.combine(this.shell.dir(this), f).."' exists"))
-  if this.fo.i[fs.combine(this.shell.dir(this), f)] == nil then
-    this:dPrint("fs: "..tostring(fs.combine(this.shell.dir(this), f)).." doesn't exist")
+  this:dPrint("fs: checking if '"..fs.combine(tostring(""), tostring(f)).."' exists")
+  if this.fo.i[fs.combine("", f)] == nil then
+    this:dPrint("fs: "..fs.combine("", f).." doesn't exist")
     return false
   end
 
@@ -132,7 +140,7 @@ docker.fs.isdir = function (this, d)
     return false
   end
 
-  if this.fo.i[fs.combine(this.shell.dir(this), d)].isDir == false then
+  if this.fo.i[fs.combine("", d)].isDir == false then
     return false
   end
 
@@ -160,7 +168,7 @@ docker.fs.addchild = function (this, d, i)
     return nil
   end
 
-  for k, v in ipairs(this.fo.i[fs.combine(this.shell.dir(this), d)].children) do
+  for k, v in ipairs(this.fo.i[fs.combine("", d)].children) do
     if v == tostring(fs.getName(i)) then
       this:dPrint("fs: child already exists.")
       return nil
@@ -168,7 +176,7 @@ docker.fs.addchild = function (this, d, i)
   end
 
   -- prepend the file.
-  table.insert(this.fo.i[fs.combine(this.shell.dir(this), d)].children, fs.getName(i))
+  table.insert(this.fo.i[fs.combine("", d)].children, fs.getName(i))
 end
 
 docker.fs.list = function (this, d)
@@ -178,11 +186,11 @@ docker.fs.list = function (this, d)
     return nil
   end
 
-  for k,v in ipairs(this.fo.i[fs.combine(this.shell.dir(this), d)].children) do
+  for k,v in ipairs(this.fo.i[fs.combine("", d)].children) do
     this:dPrint("fs: list: "..tostring(v))
   end
 
-  return this.fo.i[fs.combine(this.shell.dir(this), d)].children
+  return this.fo.i[fs.combine("", d)].children
 end
 
 docker.fs.makedir = function (this, d)
@@ -192,7 +200,7 @@ docker.fs.makedir = function (this, d)
     return nil
   end
 
-  this:dPrint("fs: making dir '"..fs.combine(this.shell.dir(this), d).."'")
+  this:dPrint("fs: making dir '"..fs.combine("", d).."'")
 
   local sb = string.split(d, "/")
 
@@ -206,7 +214,7 @@ docker.fs.makedir = function (this, d)
   no.name = filename
   no.isDir = true
 
-  this.fo.i[fs.combine(this.shell.dir(this), d)] = no
+  this.fo.i[fs.combine("", d)] = no
 
   this:dPrint("fs: incrementing fs.manifest.dirs +1")
   this.fo.m.dirs = this.fo.m.dirs+1
@@ -266,7 +274,7 @@ docker.fs.write = function (this, f, d)
   no.name = filename
   no.data = base64.encode(d)
 
-  this.fo.i[fs.combine(this.shell.dir(this), f)] = no
+  this.fo.i[fs.combine("", f)] = no
 
   -- add the child
   this.fs.addchild(this, previous, f)
@@ -280,9 +288,7 @@ docker.fs.readAll = function (this, f)
     return nil
   end
 
-  this:dPrint("fs: file data: ")
-  this:dPrint(this.fo.i[fs.combine(this.shell.dir(this), f)].data)
-  return base64.decode(this.fo.i[fs.combine(this.shell.dir(this), f)].data)
+  return base64.decode(this.fo.i[fs.combine("", f)].data)
 end
 
 docker.fs.getSize = function (this, f)
@@ -308,7 +314,7 @@ docker.fs.copy = function (this, fp, tp)
 
   this:dPrint("fs: copying "..fp.." to "..tp)
 
-  this.fo.i[fs.combine(this.shell.dir(this), tp)] = deepcopy(this.fo.i[fs.combine(this.shell.dir(this), fp)])
+  this.fo.i[fs.combine("", tp)] = deepcopy(this.fo.i[fs.combine("", fp)])
 
   return nil
 end
@@ -318,9 +324,9 @@ docker.fs.delete = function (this, p)
     error("No such file")
   end
 
-  this:dPrint("fs: delete '"..fs.combine(this.shell.dir(this), p).."'")
+  this:dPrint("fs: delete '"..fs.combine("", p).."'")
 
-  this.fo.i[fs.combine(this.shell.dir(this), p)] = nil -- remove it
+  this.fo.i[fs.combine("", p)] = nil -- remove it
 
   return nil
 end
@@ -340,8 +346,8 @@ docker.fs.move = function (this, fp, tp)
     error("File exists")
   end
 
-  this.fo.i[fs.combine(this.shell.dir(this), tp)] = deepcopy(this.fo.i[fp])
-  this.fo.i[fs.combine(this.shell.dir(this), fp)] = nil -- remove it.
+  this.fo.i[fs.combine("", tp)] = deepcopy(this.fo.i[fp])
+  this.fo.i[fs.combine("", fp)] = nil -- remove it.
 
   return true
 end
@@ -349,7 +355,7 @@ end
 --[[
   chroot an origin image so it is "localized".
 ]]
-docker.chroot = function(this, image, shell)
+docker.chroot = function(this, image)
   docker.checkArgs(this, image)
 
   if fs.exists(tostring(image)) == false then
@@ -365,6 +371,8 @@ docker.chroot = function(this, image, shell)
   env = {
       -- important functions
       ["print"] = print,
+      ["printError"] =  printError,
+      ["write"]      = write,
       ["dofile"] = function(path)
         if this.fs.exists(this, path) == false then
           error("No such file")
@@ -385,7 +393,9 @@ docker.chroot = function(this, image, shell)
       ["ipairs"]    = ipairs,
       ["pairs"]     = pairs,
       ["setfenv"]   = setfenv, -- for now
-      ["getfenv"]   = getfenv, -- for now as well
+      ["getfenv"]   = function()
+        return env
+      end, -- for now as well
       ["pcall"]     = pcall, -- for now
       ["xpcall"]    = xpcall,
       ["type"]      = type,
@@ -427,9 +437,16 @@ docker.chroot = function(this, image, shell)
       ["math"]      = math,
       ["term"]      = term,
       ["colors"]    = colors,
+      ["textutils"] = textutils,
+      ["colours"]   = colours,
       ["io"]        = {
         open = function(file, mode)
-          this:dPrint("io: open "..file.." with mode "..mode)
+          if mode == nil then -- default is r
+            this:dPrint("io: no mode given, using default r")
+            mode = "r"
+          end
+
+          this:dPrint("io: open "..tostring(file).." with mode "..tostring(mode))
 
           fobj = {}
           fobj.file = file
@@ -438,7 +455,8 @@ docker.chroot = function(this, image, shell)
           local oFile = file
           local oMode = mode
 
-          function fobj.write(this, data)
+
+          function fobj.write(that, data)
             local file = oFile
             local mode = oMode
 
@@ -448,24 +466,43 @@ docker.chroot = function(this, image, shell)
             return this.fs.write(this, file, data)
           end
 
-          function fobj.read(this)
+          local i = 0;
+          function fobj.read(that, delim)
             local file = file
-            local mode = mode
 
-            return this.fs.readAll(this, file)
+            this:dPrint("io: [read] called.")
+
+            fc = this.fs.readAll(this, file)
+
+            if delim == "*a" then
+              return fc
+            end
+
+            local s = string.split(fc, "\n")
+              for k, v in ipairs(s) do
+                i = i+1
+                if k == i then
+                  this:dPrint("io: [lines] return "..tostring(v))
+                  return tostring(v)
+                end
+            end
+
+            this:dPrint("io: [read] for whatever reason, returning nil")
+
+            return nil
           end
 
-          function fobj.close(this)
+          function fobj.close(that)
             local file = oFile
             local mode = oMode
 
-            this.fs.close(this)
+            -- this.fs.close(this)
 
             this:dPrint("close file handle on "..file)
           end
 
-          function fobj.lines(this)
-            local file = this.file
+          function fobj.lines(that)
+            local file = file
 
             fc = this.fs.readAll(this, file)
 
@@ -488,7 +525,9 @@ docker.chroot = function(this, image, shell)
       ["os"]        = deepcopy(os),
       ["http"]      = deepcopy(http),
       ["pocket"]    = pocket,
-      ["shell"]     = deepcopy(shell),
+      ["help"]      = deepcopy(help),
+      ["multishell"] = deepcopy(multishell),
+      ["peripheral"] = deepcopy(peripheral),
       ["debug"]     = {}, -- reset it.
 
       -- docker specific tables
@@ -520,7 +559,7 @@ docker.chroot = function(this, image, shell)
 
           function fobj.readAll()
             local file = file
-            local mdoe = mode
+            local mode = mode
 
             return this.fs.readAll(this, file)
           end
@@ -588,10 +627,6 @@ docker.chroot = function(this, image, shell)
       }
   }
 
-  -- shell hijacks
-  env.shell.setDir = shell_setDir
-  env.shell.dir = shell_dir
-
   -- os hijacks
   env.os.loadAPI = function(path)
     if this.fs.exists(this, path) == false then
@@ -634,20 +669,35 @@ docker.chroot = function(this, image, shell)
     return true
   end
 
-  -- shell hijacks
-  env.shell.run  = function(program)
-    env.shell.runningprogram = program
+  env.os.run = function(tenv, path, ...)
+    local file = nil
+    local params = tokenise(...)
+    local oenv = nil
 
-    this:dPrint("shell: run "..tostring(program))
-    local func = loadstring(this.fs.readAll(this, path))
-    setfenv(func, getfenv(2))
+    this:dPrint("os: params: "..tostring(tenv).." "..tostring(path).." "..tostring(params))
+    if type(tenv) ~= "string" then
+      file = path
+      oenv = tenv
+      this:dPrint("os: given enviroment.")
 
-    func()
-  end
+      -- fill unused with originals
+      this:dPrint("os: enviroment index set to env")
+      setmetatable(oenv, { __index = env})
+    else
+      this:dPrint("os: using env for enviroment")
+      oenv = env
+      file = tenv
+    end
 
-  env.shell.getRunningProgram = function()
-    this:dPrint("shell: running program is '"..tostring(env.shell.runningprogram).."'")
-    return env.shell.runningprogram
+    if this.fs.exists(this, file) == false then
+      return nil
+    end
+
+    this:dPrint("os: run "..tostring(file))
+
+    local o = loadstring(this.fs.readAll(this, file))
+    setfenv(o, oenv)
+    o(unpack(params))
   end
 
   -- global hijack?
@@ -665,6 +715,7 @@ docker.chroot = function(this, image, shell)
   print("ccdocker: invoke init => "..this.fo.init)
 
   -- call it.
+  this:dPrint("init: execute "..tostring(this.fo.init))
   o()
 end
 

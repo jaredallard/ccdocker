@@ -16,4 +16,4 @@ if fs.exists(tostring(image)) == false then
  error("image fs not found")
 end
 
-docker.chroot(docker, image, shell)
+docker.chroot(docker, image)
