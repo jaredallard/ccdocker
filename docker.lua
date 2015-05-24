@@ -42,6 +42,8 @@ local base64 = dofile("/docker/base64.lua")
 
 -- The JavaScript-like syntax is real.
 docker = {}
+docker.fs = {}
+docker.shell = {}
 docker.version = "0.1.1"
 
 docker.init = function(this)
@@ -60,333 +62,322 @@ docker.pullImage = function(this)
   docker.checkArgs(this)
 end
 
+docker.dPrint = function(this, msg)
+  local h = fs.open("docker.log", "a")
+  h.write(tostring(msg).."\n")
+  h.close()
+
+  return nil -- nothing for now
+end
+
 docker.genFS = function(this, file)
   if fs.exists(file) ~= true then
-    print("fs: generating fs db")
+    this:dPrint("fs: generating fs db")
 
     fo = {}
-    fo.manifest = {}
-    fo.manifest.size = 10000
-    fo.manifest.files = 0
-    fo.manifest.dirs = 0
-    fo.manifest.version = 001
-    fo.inodes = {}
+
+    -- init script aka entrypoint
+    fo.init = ""
+
+    -- manifest
+    fo.m = {}
+    fo.m.size = 10000
+    fo.m.files = 0
+    fo.m.dirs = 0
+    fo.m.version = 002
+
+    -- inode container
+    fo.i = {}
 
     -- root
-    fo.inodes[""] = {}
-    fo.inodes[""].isDir = true
-    fo.inodes[""].parents = {}
-    fo.inodes[""].children = {}
-    fo.inodes[""].size = 0
+    fo.i[""] = {}
+    fo.i[""].isDir = true
+    fo.i[""].children = {}
+    fo.i[""].size = 0
 
     local fstr = fs.open(file, "w")
     fstr.write(json:encode(fo))
     fstr.close()
     fstr = nil -- erase it, mark for gc.
-    print("fs: generated")
+
+    this:dPrint("fs: generated")
   end
+end
+
+-- shell
+docker.shell.shellstack = "/"
+docker.shell.setdir = function (this, dir)
+  this.shell.shellstack = dir
+end
+
+docker.shell.dir = function (this)
+  return tostring(this.shell.shellstack)
+end
+
+docker.fs.exists = function (this, f)
+  this:dPrint("fs: checking if '"..tostring(fs.combine(this.shell.dir(this), f).."' exists"))
+  if this.fo.i[fs.combine(this.shell.dir(this), f)] == nil then
+    this:dPrint("fs: "..tostring(fs.combine(this.shell.dir(this), f)).." doesn't exist")
+    return false
+  end
+
+  this:dPrint("fs: it exists")
+  -- probably exists
+  return true
+end
+
+docker.fs.isdir = function (this, d)
+  -- per specs, if it doesn't exist return false
+  if this.fs.exists(this, d) ~= true then
+    return false
+  end
+
+  if this.fo.i[fs.combine(this.shell.dir(this), d)].isDir == false then
+    return false
+  end
+
+  -- return true as it must be a dir
+  return true
+end
+
+-- non-standard function, is internal.
+docker.fs.addchild = function (this, d, i)
+  this:dPrint("fs: [addchild] parent = "..tostring(d).." inode = "..tostring(i))
+
+  -- per specs, do nothing if it exists
+  if this.fs.exists(this, d) == false then
+    error("parent not found")
+    return nil
+  end
+
+  if this.fs.exists(this,i) == false then
+    error("child not found")
+    return nil
+  end
+
+  if this.fs.isdir(this, d) == false then
+    error("isn't directory")
+    return nil
+  end
+
+  for k, v in ipairs(this.fo.i[fs.combine(this.shell.dir(this), d)].children) do
+    if v == tostring(fs.getName(i)) then
+      this:dPrint("fs: child already exists.")
+      return nil
+    end
+  end
+
+  -- prepend the file.
+  table.insert(this.fo.i[fs.combine(this.shell.dir(this), d)].children, fs.getName(i))
+end
+
+docker.fs.list = function (this, d)
+  -- per specs, do nothing if it exists
+  if this.fs.exists(this,d) == false then
+    error("File not found")
+    return nil
+  end
+
+  for k,v in ipairs(this.fo.i[fs.combine(this.shell.dir(this), d)].children) do
+    this:dPrint("fs: list: "..tostring(v))
+  end
+
+  return this.fo.i[fs.combine(this.shell.dir(this), d)].children
+end
+
+docker.fs.makedir = function (this, d)
+  -- per specs, do nothing if it exists
+  if this.fs.exists(this,d) == true then
+    this:dPrint("fs: dir '"..d.."' already exists")
+    return nil
+  end
+
+  this:dPrint("fs: making dir '"..fs.combine(this.shell.dir(this), d).."'")
+
+  local sb = string.split(d, "/")
+
+  local filename = nil
+  local previous = ""
+
+  -- make the dir
+  no = {}
+  no.size = 0
+  no.children = {}
+  no.name = filename
+  no.isDir = true
+
+  this.fo.i[fs.combine(this.shell.dir(this), d)] = no
+
+  this:dPrint("fs: incrementing fs.manifest.dirs +1")
+  this.fo.m.dirs = this.fo.m.dirs+1
+
+  -- return nil anyways
+  return nil
+end
+
+docker.fs.write = function (this, f, d)
+  local sb = string.split(f, "/")
+
+  -- scope
+  local previous = ""
+  for k, v in ipairs(sb) do
+    if v == "" then
+      this:dPrint("fs: is root leading slash")
+    else
+      if k ~= #sb then -- don't make a dir for the actual file
+        this:dPrint("fs: [write] recurv making dir")
+
+        this:dPrint("fs: [write] v = "..tostring(v))
+        this:dPrint("fs: [write] previous = "..tostring(previous))
+
+        if this.fs.exists(this, fs.combine(previous, v)) then
+          this:dPrint(previous)
+          this:dPrint(fs.combine(previous, v))
+          this.fs.addchild(this, previous, fs.combine(previous, v))
+        end
+
+        this.fs.makedir(this, fs.combine(previous, v)) -- recursivly make dirs, as per specs
+        previous = fs.combine(previous, v) -- build a stack.
+        this.dPrint(this, previous)
+      else
+        this.dPrint(this, "fs: recieved file name, not making dir")
+      end
+    end
+  end
+
+  this:dPrint("fs: [write] f = "..tostring(f))
+
+  if this.fs.exists(this, f) == false then
+    this:dPrint("fs: incrementing manifest.files +1")
+    this.fo.m.files = this.fo.m.files+1
+  end
+
+  local filename = nil
+  for k, v in ipairs(sb) do
+    if k == #sb then
+      filename = v
+    end
+  end
+
+  -- file object
+  no = {}
+  no.isDir = false
+  no.size = 0
+  no.name = filename
+  no.data = base64.encode(d)
+
+  this.fo.i[fs.combine(this.shell.dir(this), f)] = no
+
+  -- add the child
+  this.fs.addchild(this, previous, f)
+
+  -- as per the cc specs
+  return nil
+end
+
+docker.fs.readAll = function (this, f)
+  if this.fs.exists(this, f) ~= true then
+    return nil
+  end
+
+  this:dPrint("fs: file data: ")
+  this:dPrint(this.fo.i[fs.combine(this.shell.dir(this), f)].data)
+  return base64.decode(this.fo.i[fs.combine(this.shell.dir(this), f)].data)
+end
+
+docker.fs.getSize = function (this, f)
+  if this.fs.exists(this,f) ~= true then
+    error("No such file")
+  end
+
+  if this.fo.i[f].size < 512 then
+    return 512
+  else
+    return (this.fo.i[f].size + this.fo.i[f].name)
+  end
+end
+
+docker.fs.copy = function (this, fp, tp)
+  if this.fs.exists(this,fp) ~= true then
+    error("No such file")
+  end
+
+  if this.fs.exists(this,tp) == true then
+    error("File exists")
+  end
+
+  this:dPrint("fs: copying "..fp.." to "..tp)
+
+  this.fo.i[fs.combine(this.shell.dir(this), tp)] = deepcopy(this.fo.i[fs.combine(this.shell.dir(this), fp)])
+
+  return nil
+end
+
+docker.fs.delete = function (this, p)
+  if this.fs.exists(this,p) ~= true then
+    error("No such file")
+  end
+
+  this:dPrint("fs: delete '"..fs.combine(this.shell.dir(this), p).."'")
+
+  this.fo.i[fs.combine(this.shell.dir(this), p)] = nil -- remove it
+
+  return nil
+end
+
+docker.fs.close = function ()
+  fstr = fs.open(image, "w")
+  fstr.write(json:encode(fo))
+  fstr.close()
+end
+
+docker.fs.move = function (this, fp, tp)
+  if this.fs.exists(this,fp) ~= true then
+    error("No such file")
+  end
+
+  if this.fs.exists(this,tp) == true then
+    error("File exists")
+  end
+
+  this.fo.i[fs.combine(this.shell.dir(this), tp)] = deepcopy(this.fo.i[fp])
+  this.fo.i[fs.combine(this.shell.dir(this), fp)] = nil -- remove it.
+
+  return true
 end
 
 --[[
   chroot an origin image so it is "localized".
 ]]
-docker.chroot = function(this, image)
+docker.chroot = function(this, image, shell)
   docker.checkArgs(this, image)
 
-  if fs.exists(image) == false then
+  if fs.exists(tostring(image)) == false then
     error("image not found")
   end
 
-  o = loadfile(image)
-
-  -- setup original functions
-  local oPrint = deepcopy(print)
-  local oloadstring = loadstring
-
-  -- overrides
-  local function dPrint(msg)
-    lp = fs.open("docker.log", "a")
-    lp.write("chroot: "..tostring(msg).." \n")
-    lp.close()
-
-    -- oPrint("chroot: "..tostring(msg))
-    return nil
-  end
-
-  -- shell
-  _G.shellstack = "/"
-  function shell_setdir(dir)
-    _G.shellstack = dir
-  end
-
-  function shell_dir()
-    return tostring(_G.shellstack)
-  end
-
-  -- generate the FS if needed.
-  this.genFS(this, "image.docker.fs")
-
   -- fs
-  local fstr = fs.open("image.docker.fs", "r")
-  fo = json:decode(fstr.readAll())
+  local fstr = fs.open(image, "r")
+  this.fo = json:decode(fstr.readAll())
   fstr.close()
-
-  local function fs_exists(f)
-    -- is relative
-    dPrint("fs: checking if '"..tostring(fs.combine(shell_dir(), f).."' exists"))
-    if fo.inodes[fs.combine(shell_dir(), f)] == nil then
-      dPrint("fs: "..tostring(fs.combine(shell_dir(), f)).." doesn't exist")
-      return false
-    end
-
-    -- probably exists
-    return true
-  end
-
-  local function fs_isdir(d)
-    -- per specs, if it doesn't exist return false
-    if fs_exists(d) ~= true then
-      return false
-    end
-
-    if fo.inodes[fs.combine(shell_dir(), d)].isDir == false then
-      return false
-    end
-
-    -- return true as it must be a dir
-    return true
-  end
-
-  -- non-standard function, is internal.
-  local function fs_addchild(d, i)
-    dPrint("fs: [addchild] parent = "..d.." inode = "..i)
-
-    -- per specs, do nothing if it exists
-    if fs_exists(d) == false then
-      error("parent not found")
-      return nil
-    end
-
-    if fs_exists(i) == false then
-      error("child not found")
-      return nil
-    end
-
-    if fs_isdir(d) == false then
-      error("isn't directory")
-      return nil
-    end
-
-    for k, v in ipairs(fo.inodes[fs.combine(shell_dir(), d)].children) do
-      if v == tostring(fs.getName(i)) then
-        dPrint("fs: child already exists.")
-        return nil
-      end
-    end
-
-    -- prepend the file.
-    table.insert(fo.inodes[fs.combine(shell_dir(), d)].children, fs.getName(i))
-  end
-
-  local function fs_list(d)
-    -- per specs, do nothing if it exists
-    if fs_exists(d) == false then
-      error("File not found")
-      return nil
-    end
-
-    for k,v in ipairs(fo.inodes[fs.combine(shell_dir(), d)].children) do
-      dPrint("fs: list: "..tostring(v))
-    end
-
-    return fo.inodes[fs.combine(shell_dir(), d)].children
-  end
-
-  local function fs_makedir(d)
-    -- per specs, do nothing if it exists
-    if fs_exists(d) == true then
-      dPrint("fs: dir '"..d.."' already exists")
-      return nil
-    end
-
-    dPrint("fs: making dir '"..fs.combine(shell_dir(), d).."'")
-
-    local sb = string.split(d, "/")
-
-    local filename = nil
-    local previous = ""
-    local parents = {}
-    for k, v in ipairs(sb) do
-      if v ~= "" then
-        previous = previous.."/"..tostring(v)
-        dPrint("parent #"..(k-1).." is '"..tostring(previous).."'")
-        table.insert(parents, previous)
-      end
-
-      if k == #sb then
-        filename = v
-      end
-    end
-
-    -- make the dir
-    no = {}
-    no.size = 0
-    no.parents = parents -- directory to file-or-directory relation.
-    no.children = {}
-    no.name = filename
-    no.isDir = true
-
-    fo.inodes[fs.combine(shell_dir(), d)] = no
-
-    -- return nil anyways
-    return nil
-  end
-
-  local function fs_write(f, d)
-    local sb = string.split(f, "/")
-
-    -- scope
-    local previous = ""
-    for k, v in ipairs(sb) do
-      if v == "" then
-        dPrint("fs: is root leading slash")
-      else
-        if k ~= #sb then -- don't make a dir for the actual file
-          dPrint("fs: [write] recurv making dir")
-
-          if fs_exists(fs.combine(previous, v)) then
-            dPrint(previous)
-            dPrint(fs.combine(previous, v))
-            fs_addchild(previous, fs.combine(previous, v))
-          end
-
-          fs_makedir(fs.combine(previous, v)) -- recursivly make dirs, as per specs
-          previous = fs.combine(previous, v) -- build a stack.
-          dPrint(previous)
-        else
-          dPrint("fs: recieved file name, not making dir")
-        end
-      end
-    end
-
-    if fs_exists(f) == false then
-      dPrint("fs: incrementing manifest.files +1")
-      fo.manifest.files = fo.manifest.files+1
-    end
-
-    local filename = nil
-    for k, v in ipairs(sb) do
-      if k == #sb then
-        filename = v
-      end
-    end
-
-    -- file object
-    no = {}
-    no.isDir = false
-    no.size = 0
-    no.name = filename
-    no.data = base64.encode(d)
-
-    fo.inodes[fs.combine(shell_dir(), f)] = no
-
-    -- add the child
-    fs_addchild(previous, f)
-
-    -- as per the cc specs
-    return nil
-  end
-
-  local function fs_readAll(f)
-    if fs_exists(f) ~= true then
-      return nil
-    end
-
-    return base64.decode(fo.inodes[fs.combine(shell_dir(), f)].data)
-  end
-
-  local function fs_getsize(f)
-    if fs_exists(f) ~= true then
-      error("No such file")
-    end
-
-    if fo.inodes[f].size < 512 then
-      return 512
-    else
-      return (fo.inodes[f].size + fo.inodes[f].name)
-    end
-  end
-
-  local function fs_copy(fp, tp)
-    if fs_exists(fp) ~= true then
-      error("No such file")
-    end
-
-    if fs_exists(tp) == true then
-      error("File exists")
-    end
-
-    dPrint("fs: copying "..fp.." to "..tp)
-
-    fo.inodes[fs.combine(shell_dir(), tp)] = deepcopy(fo.inodes[fs.combine(shell_dir(), fp)])
-
-    return nil
-  end
-
-  local function fs_delete(p)
-    if fs_exists(p) ~= true then
-      error("No such file")
-    end
-
-    dPrint("fs: delete '"..fs.combine(shell_dir(), p).."'")
-
-    fo.inodes[fs.combine(shell_dir(), p)] = nil -- remove it
-
-    return nil
-  end
-
-  local function fs_close()
-    fstr = fs.open("image.docker.fs", "w")
-    fstr.write(json:encode(fo))
-    fstr.close()
-  end
-
-  local function fs_move(fp, tp)
-    if fs_exists(fp) ~= true then
-      error("No such file")
-    end
-
-    if fs_exists(tp) == true then
-      error("File exists")
-    end
-
-    fo.inodes[fs.combine(shell_dir(), tp)] = deepcopy(fo.inodes[fp])
-    fo.inodes[fs.combine(shell_dir(), fp)] = nil -- remove it.
-
-    fstr = fs.open("image.docker.fs", "w")
-    fstr.write(json:encode(fo))
-    fstr.close()
-
-    return true
-  end
 
   -- build the "chroot" enviroment
   env = {
       -- important functions
       ["print"] = print,
       ["dofile"] = function(path)
-        if fs_exists(path) == false then
+        if this.fs.exists(this, path) == false then
           error("No such file")
         end
 
-        if fs_isdir(path) then
+        if this.fs.isdir(this, path) then
           error("Is directory")
         end
 
-        dPrint("dofile: "..path)
+        this:dPrint("dofile: "..path)
 
-        fc = fs_readAll(path)
-        f = oloadstring(fc)
+        fc = this.fs.readAll(this, path)
+        f = loadstring(fc)
         setfenv(f, getfenv(2))
         f() -- execute it
       end,
@@ -432,13 +423,13 @@ docker.chroot = function(this, image)
         sub = string.sub,
         upper = string.upper
       },
-      ["table"]     = deepcopy(table),
-      ["math"]      = deepcopy(math),
+      ["table"]     = table,
+      ["math"]      = math,
       ["term"]      = term,
       ["colors"]    = colors,
       ["io"]        = {
         open = function(file, mode)
-          dPrint("io: open "..file.." with mode "..mode)
+          this:dPrint("io: open "..file.." with mode "..mode)
 
           fobj = {}
           fobj.file = file
@@ -451,32 +442,32 @@ docker.chroot = function(this, image)
             local file = oFile
             local mode = oMode
 
-            dPrint("write data to "..file)
+            this:dPrint("write data to "..file)
 
             -- write the data
-            return fs_write(file, data)
+            return this.fs.write(this, file, data)
           end
 
           function fobj.read(this)
             local file = file
             local mode = mode
 
-            return fs_readAll(file)
+            return this.fs.readAll(this, file)
           end
 
           function fobj.close(this)
             local file = oFile
             local mode = oMode
 
-            fs_close()
+            this.fs.close(this)
 
-            dPrint("close file handle on "..file)
+            this:dPrint("close file handle on "..file)
           end
 
           function fobj.lines(this)
             local file = this.file
 
-            fc = fs_readAll(file)
+            fc = this.fs.readAll(this, file)
 
             local i = 0;
             return coroutine.wrap(function()
@@ -484,7 +475,7 @@ docker.chroot = function(this, image)
               for k, v in ipairs(s) do
                 i = i+1
                 if k == i then
-                  dPrint("io: [lines] return "..tostring(v))
+                  this:dPrint("io: [lines] return "..tostring(v))
                   coroutine.yield(v)
                 end
               end
@@ -496,6 +487,7 @@ docker.chroot = function(this, image)
       },
       ["os"]        = deepcopy(os),
       ["http"]      = deepcopy(http),
+      ["pocket"]    = pocket,
       ["shell"]     = deepcopy(shell),
       ["debug"]     = {}, -- reset it.
 
@@ -509,7 +501,7 @@ docker.chroot = function(this, image)
       -- I/O hijack (uses a JSON light FS)
       ["fs"] = {
         open = function(file, mode)
-          dPrint("fs: open "..file.." with mode "..mode)
+          this:dPrint("fs: open "..file.." with mode "..mode)
 
           fobj = {}
 
@@ -520,75 +512,75 @@ docker.chroot = function(this, image)
             local file = oFile
             local mode = oMode
 
-            dPrint("write data to "..file)
+            this:dPrint("write data to "..file)
 
             -- write the data
-            return fs_write(file, data)
+            return this.fs.write(this, file, data)
           end
 
           function fobj.readAll()
             local file = file
             local mdoe = mode
 
-            return fs_readAll(file)
+            return this.fs.readAll(this, file)
           end
 
           function fobj.close()
             local file = oFile
             local mode = oMode
 
-            fs_close()
+            this.fs.close(this)
 
-            dPrint("close file handle on "..file)
+            this:dPrint("close file handle on "..file)
           end
 
           return fobj;
         end,
         exists = function(file)
-          dPrint("checking if '"..file.."' file exists")
-          return fs_exists(file)
+          this:dPrint("checking if '"..file.."' file exists")
+          return this.fs.exists(this, file)
         end,
         isDir = function(dir)
-          return fs_isdir(dir)
+          return this.fs.isdir(this, dir)
         end,
         makeDir = function(dir)
-          return fs_makedir(dir)
+          return this.fs.makedir(this, dir)
         end,
         combine = fs.combine,
         isReadOnly = function(file)
           return false -- can't see us needing this.
         end,
         getSize = function(file)
-          return fs_getsize(file)
+          return this.fs.getSize(this, file)
         end,
         getName = fs.getName,
         getDir = fs.getDir,
         getDrive = function(path)
-          if fs_exists(path) then
+          if this.fs.exists(this, path) then
             return "hdd"
           else
             return nil
           end
         end,
         delete = function(path)
-          return fs_delete(path)
+          return this.fs.delete(this, path)
         end,
         copy = function(from, to)
           if from == nil or to == nil then
             error("missing params")
           end
 
-          return fs_copy(from, to)
+          return this.fs.copy(this, from, to)
         end,
         move = function(from, to)
           if from == nil or to == nil then
             error("missing params")
           end
 
-          return fs_move(from, to)
+          return this.fs.move(this, from, to)
         end,
         list = function(directory)
-          return fs_list(directory)
+          return this.fs.list(this, directory)
         end,
         getFreeSpace = function()
           error("fs.getFreeSpace not implemented.")
@@ -602,18 +594,18 @@ docker.chroot = function(this, image)
 
   -- os hijacks
   env.os.loadAPI = function(path)
-    if fs_exists(path) == false then
+    if this.fs.exists(this, path) == false then
       error("File not found")
     end
 
-    if fs_isdir(path) then
+    if this.fs.isdir(this, path) then
       error("Is directory")
     end
 
     local sName = fs.getName(path)
     local tEnv = {}
     setmetatable(tEnv, { __index = env})
-    local fnAPI, err = loadstring(fs_readAll(path))
+    local fnAPI, err = loadstring(this.fs.readAll(this, path))
     if fnAPI then
       setfenv(fnAPI, tEnv)
       local ok, err = pcall(fnAPI)
@@ -625,18 +617,18 @@ docker.chroot = function(this, image)
     -- extract out the context
     local tAPI = {}
     for k,v in ipairs(tEnv) do
-      dPrint(k)
-      dPrint(tostring(v))
+      this:dPrint(k)
+      this:dPrint(tostring(v))
     end
 
     for k,v in pairs(tEnv) do
       if k ~= "_ENV" then
-        dPrint("os: "..sName..": register method '"..tostring(k).."'")
+        this:dPrint("os: "..sName..": register method '"..tostring(k).."'")
         tAPI[k] =  v
       end
     end
 
-    dPrint("os: register API "..sName)
+    this:dPrint("os: register API "..sName)
     env[sName] = tAPI -- this loads it into the namespace.
 
     return true
@@ -646,26 +638,39 @@ docker.chroot = function(this, image)
   env.shell.run  = function(program)
     env.shell.runningprogram = program
 
-    dPrint("shell: run "..tostring(program))
-    func = loadstring(fs_readAll(path))
+    this:dPrint("shell: run "..tostring(program))
+    local func = loadstring(this.fs.readAll(this, path))
     setfenv(func, getfenv(2))
 
     func()
   end
 
   env.shell.getRunningProgram = function()
-    dPrint("shell: running program is '"..tostring(env.shell.runningprogram).."'")
+    this:dPrint("shell: running program is '"..tostring(env.shell.runningprogram).."'")
     return env.shell.runningprogram
   end
 
   -- global hijack?
   env._G = env
 
+  if this.fs.exists(this, this.fo.init) ~= true then
+    error("image init doesn't exist")
+  end
+
+  -- load the files contents
+  local o = loadstring(this.fs.readAll(this, this.fo.init))
   setfenv(o, env)
 
-  o("fetch")
+  print("ccdocker: running "..this.fo.name..":"..this.fo.version)
+  print("ccdocker: invoke init => "..this.fo.init)
+
+  -- call it.
+  o()
 end
 
+--[[
+  TODO: Use standardized FS functions, not locales.
+]]
 docker.makeImage = function(this, dir)
   docker.checkArgs(this, dir)
 
@@ -717,158 +722,8 @@ docker.makeImage = function(this, dir)
   this.genFS(this, fs.combine(dir, "rootfs.ccdocker.fs"))
 
   local fhhh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "r")
-  local fo = json:decode(fhhh.readAll())
+  this.fo = json:decode(fhhh.readAll())
   fhhh.close()
-
-  local function dPrint(msg)
-    --print(msg)
-    return nil
-  end
-
-  local function shell_dir()
-    return '/'
-  end
-
-  local function fs_exists(f)
-    -- is relative
-    dPrint("fs: checking if '"..tostring(fs.combine(shell_dir(), f).."' exists"))
-    if fo.inodes[fs.combine(shell_dir(), f)] == nil then
-      dPrint("fs: "..tostring(fs.combine(shell_dir(), f)).." doesn't exist")
-      return false
-    end
-
-    -- probably exists
-    return true
-  end
-
-  local function fs_isdir(d)
-    -- per specs, if it doesn't exist return false
-    if fs_exists(d) ~= true then
-      return false
-    end
-
-    if fo.inodes[fs.combine(shell_dir(), d)].isDir == false then
-      return false
-    end
-
-    -- return true as it must be a dir
-    return true
-  end
-
-  local function fs_addchild(d, i)
-    dPrint("fs: [addchild] parent = "..d.." inode = "..i)
-
-    -- per specs, do nothing if it exists
-    if fs_exists(d) == false then
-      error("parent not found")
-      return nil
-    end
-
-    if fs_exists(i) == false then
-      error("child not found")
-      return nil
-    end
-
-    if fs_isdir(d) == false then
-      error("isn't directory")
-      return nil
-    end
-
-    for k, v in ipairs(fo.inodes[fs.combine(shell_dir(), d)].children) do
-      if v == tostring(fs.getName(i)) then
-        dPrint("fs: child already exists.")
-        return nil
-      end
-    end
-
-    -- prepend the file.
-    table.insert(fo.inodes[fs.combine(shell_dir(), d)].children, fs.getName(i))
-  end
-
-  local function fs_makedir(d)
-    -- per specs, do nothing if it exists
-    if fs_exists(d) == true then
-      dPrint("fs: dir '"..d.."' already exists")
-      return nil
-    end
-
-    dPrint("fs: making dir '"..fs.combine(shell_dir(), d).."'")
-
-    local sb = string.split(d, "/")
-
-    local filename = nil
-    local previous = ""
-    for k, v in ipairs(sb) do
-      if k == #sb then
-        filename = v
-      end
-    end
-
-    -- make the dir
-    no = {}
-    no.size = 0
-    no.children = {}
-    no.name = filename
-    no.isDir = true
-
-    fo.inodes[fs.combine(shell_dir(), d)] = no
-
-    dPrint("fs: incrementing manifest.dirs +1")
-    fo.manifest.dirs = fo.manifest.dirs+1
-
-    -- return nil anyways
-    return nil
-  end
-
-  local function fs_write(f, d)
-    local sb = string.split(f, "/")
-
-    -- scope
-    local previous = ""
-    for k, v in ipairs(sb) do
-      if v == "" then
-        dPrint("fs: is root leading slash")
-      else
-        if k ~= #sb then -- don't make a dir for the actual file
-          if fs_exists(fs.combine(previous, v)) then
-            fs_addchild(previous, fs.combine(previous, v))
-          end
-
-          fs_makedir(fs.combine(previous, v)) -- recursivly make dirs, as per specs
-          previous = fs.combine(previous, v) -- build a stack.
-        else
-          dPrint("fs: recieved file name, not making dir")
-        end
-      end
-    end
-
-    if fs_exists(f) == false then
-      dPrint("fs: incrementing manifest.files +1")
-      fo.manifest.files = fo.manifest.files+1
-    end
-
-    local filename = nil
-    for k, v in ipairs(sb) do
-      if k == #sb then
-        filename = v
-      end
-    end
-
-    -- file object
-    no = {}
-    no.isDir = false
-    no.size = 0
-    no.name = filename
-    no.data = base64.encode(d)
-
-    fo.inodes[fs.combine(shell_dir(), f)] = no
-
-    -- add the child
-    fs_addchild(previous, f)
-
-    -- as per the cc specs
-    return nil
-  end
 
   -- parse the manifest again.
   for line in fh:lines() do
@@ -881,51 +736,84 @@ docker.makeImage = function(this, dir)
     -- walk function, omfg it's buggy guys
     local i = 0
     local files = {}
-    function walk(direct)
+    function walk(direct, from, to)
       for k, c in pairs(fs.list(direct)) do
         if fs.isDir(fs.combine(direct, c)) ~= false then
-          walk(fs.combine(direct, c))
+          walk(fs.combine(direct, c), from, to)
         else
+          local a = string.sub(direct, #dir, #direct)
+          local b = string.gsub(a, "/"..from, to)
+
           table.insert(files, {
             odir = direct,
-            rdir = string.sub(direct, #dir, #direct),
+            rdir = b,
             name = c
           })
         end
       end
     end
 
-
     if cmd == "ADD" then
-      print("adding file(s) "..tostring(arg))
-      print("(this may take awhile...)")
+      local from = string.match(arg, "([a-zA-Z/]+)")
+      local to = string.match(arg, " (.+)")
+
+      print("ADD "..from.." TO "..to)
+
+      -- pre-processing
+      if to == "/" then
+        to = ""
+      end
+
+      if fs.exists(fs.combine(dir, from)) == false then
+        error("file not found")
+      end
+
+      local start = string.match(os.clock(), "([0-9]+)\.")
 
       -- TODO: Only walk when fs.isDir()
-      walk(fs.combine(dir, arg))
+      walk(fs.combine(dir, from), from, to)
 
       for i, v in ipairs(files) do
         if fs.exists(fs.combine(v.odir, v.name)) == false then
           error("an error occured [ERRNOTEXISTLOOP]")
         end
 
+        local time_s = string.match(os.clock(), "([0-9]+)\.")
+
+        if math.floor(time_s - start) > 4 then
+          print("NOTICE: Yeilding for 1 second.")
+          os.sleep(0)
+          start = string.match(os.clock(), "([0-9]+)\.")
+          print("NOTICE: Yeild finished.")
+        end
+
         -- read the file
-        dPrint(fs.combine(v.odir, v.name))
         local ch = fs.open(fs.combine(v.odir, v.name), "r")
         local c = ch.readAll()
         ch.close()
 
-        fs_write(fs.combine(v.rdir, v.name), c)
+        this.fs.write(this, fs.combine(v.rdir, v.name), c)
       end
-
-      local ffh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "w")
-      ffh.write(json:encode(fo))
-      ffh.close()
     elseif cmd == "ENTRYPOINT" then
-      print("register entrypoint: "..arg)
+      this.fo.init = tostring(arg)
+
+      print("ccdocker: register entrypoint: "..arg)
     end
   end
 
-  print("done!")
+  print("ccdocker: set name       = "..tostring(name))
+  this.fo.name = name
+  print("ccdocker: set maintainer = "..tostring(maintainer))
+  this.fo.maintainer = base64.encode(maintainer)
+  print("ccdocker: set version    = "..tostring(version))
+  this.fo.version = version
+
+  print("ccdocker: write to file")
+  local ffh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "w")
+  ffh.write(json:encode(this.fo))
+  ffh.close()
+
+  print("finished.")
 end
 
 -- initialize the ccdocker library

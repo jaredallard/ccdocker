@@ -16,4 +16,4 @@ if fs.exists(directory) == false then
   error("directory not found")
 end
 
-docker:makeImage(directory)
+docker.makeImage(docker, directory)

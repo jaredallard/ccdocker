@@ -1,1 +1,19 @@
- 
+ --[[
+ Make a docker image!
+
+ Author: Jared Allard <rainbowdashdc@pony.so>
+ License: MIT
+ Version: 0.0.1
+]]
+
+local docker = loadfile("/docker/docker.lua")()
+local json = loadfile("/docker/json.lua")()
+local Args = {...}
+local image = Args[1]
+
+-- verify it exists
+if fs.exists(tostring(image)) == false then
+ error("image fs not found")
+end
+
+docker.chroot(docker, image, shell)

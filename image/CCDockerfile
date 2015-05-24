@@ -1,5 +1,5 @@
 NAME craftos
 VERSION 1.7
 MAINTAINER Jared Allard <rainbowdashdc@pony.so>
-ADD root
+ADD root /
 ENTRYPOINT startup
