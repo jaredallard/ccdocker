@@ -2,4 +2,5 @@ NAME craftos
 VERSION 1.7
 MAINTAINER Jared Allard <rainbowdashdc@pony.so>
 ADD root /rom
+ENV os.version 1.7
 ENTRYPOINT rom/programs/shell

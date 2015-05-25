@@ -99,7 +99,7 @@ docker.genFS = function(this, file)
 
     -- manifest
     fo.m = {}
-    fo.m.size = 10000
+    fo.m.s = 10000
     fo.m.files = 0
     fo.m.dirs = 0
     fo.m.version = 002
@@ -110,8 +110,8 @@ docker.genFS = function(this, file)
     -- root
     fo.i[""] = {}
     fo.i[""].isDir = true
-    fo.i[""].children = {}
-    fo.i[""].size = 0
+    fo.i[""].c = {}
+    fo.i[""].s = 0
 
     local fstr = fs.open(file, "w")
     fstr.write(json:encode(fo))
@@ -168,7 +168,7 @@ docker.fs.addchild = function (this, d, i)
     return nil
   end
 
-  for k, v in ipairs(this.fo.i[fs.combine("", d)].children) do
+  for k, v in ipairs(this.fo.i[fs.combine("", d)].c) do
     if v == tostring(fs.getName(i)) then
       this:dPrint("fs: child already exists.")
       return nil
@@ -176,7 +176,7 @@ docker.fs.addchild = function (this, d, i)
   end
 
   -- prepend the file.
-  table.insert(this.fo.i[fs.combine("", d)].children, fs.getName(i))
+  table.insert(this.fo.i[fs.combine("", d)].c, fs.getName(i))
 end
 
 docker.fs.list = function (this, d)
@@ -186,11 +186,11 @@ docker.fs.list = function (this, d)
     return nil
   end
 
-  for k,v in ipairs(this.fo.i[fs.combine("", d)].children) do
+  for k,v in ipairs(this.fo.i[fs.combine("", d)].c) do
     this:dPrint("fs: list: "..tostring(v))
   end
 
-  return this.fo.i[fs.combine("", d)].children
+  return this.fo.i[fs.combine("", d)].c
 end
 
 docker.fs.makedir = function (this, d)
@@ -209,9 +209,9 @@ docker.fs.makedir = function (this, d)
 
   -- make the dir
   no = {}
-  no.size = 0
-  no.children = {}
-  no.name = filename
+  no.s = 0
+  no.c = {}
+  no.n = filename
   no.isDir = true
 
   this.fo.i[fs.combine("", d)] = no
@@ -270,8 +270,8 @@ docker.fs.write = function (this, f, d)
   -- file object
   no = {}
   no.isDir = false
-  no.size = 0
-  no.name = filename
+  no.s = 0
+  no.n = filename
   no.data = base64.encode(d)
 
   this.fo.i[fs.combine("", f)] = no
@@ -296,10 +296,10 @@ docker.fs.getSize = function (this, f)
     error("No such file")
   end
 
-  if this.fo.i[f].size < 512 then
+  if this.fo.i[f].s < 512 then
     return 512
   else
-    return (this.fo.i[f].size + this.fo.i[f].name)
+    return (this.fo.i[f].s + this.fo.i[f].n)
   end
 end
 
@@ -479,15 +479,14 @@ docker.chroot = function(this, image)
             end
 
             local s = string.split(fc, "\n")
-              for k, v in ipairs(s) do
-                i = i+1
+            i = i + 1
+            this:dPrint("io: [read] line threshold is "..i)
+            for k, v in ipairs(s) do
                 if k == i then
-                  this:dPrint("io: [lines] return "..tostring(v))
+                  this:dPrint("io: [read] return "..tostring(v))
                   return tostring(v)
                 end
             end
-
-            this:dPrint("io: [read] for whatever reason, returning nil")
 
             return nil
           end
