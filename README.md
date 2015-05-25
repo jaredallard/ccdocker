@@ -12,7 +12,7 @@ The magic of setfenv and getfenv.
 
 ## Developers
 
- * Jared Allard &gt;rainbowdashdc&amp;pony.so&lt;
+ * Jared Allard &lt;rainbowdashdc&amp;pony.so&gt;
 
 ## License
 
