@@ -62,7 +62,7 @@ end
 local Args = {...}
 
 -- config
-local server = "192.168.1.4"
+local server = "73.42.212.100"
 
 local oprint = print
 local write = term.write
