@@ -66,8 +66,6 @@ docker.version = "0.1.1"
 
 docker.init = function(this)
   docker.checkArgs(this)
-
-  print("ccdocker ".. this.version)
 end
 
 docker.checkArgs = function(this)
@@ -768,6 +766,11 @@ docker.makeImage = function(this, dir)
     end
   end
 
+  if fs.exists(fs.combine(dir, "rootfs.ccdocker.fs")) then
+    print("NOTICE: removing old fs")
+    fs.delete(fs.combine(dir, "rootfs.ccdocker.fs"))
+  end
+
   print("building "..name..":"..version)
   this.genFS(this, fs.combine(dir, "rootfs.ccdocker.fs"))
 
@@ -830,7 +833,7 @@ docker.makeImage = function(this, dir)
 
         local time_s = string.match(os.clock(), "([0-9]+)\.")
 
-        if math.floor(time_s - start) > 4 then
+        if math.floor(time_s - start) > 3 then
           print("NOTICE: Yeilding for 1 second.")
           os.sleep(0)
           start = string.match(os.clock(), "([0-9]+)\.")
@@ -854,7 +857,7 @@ docker.makeImage = function(this, dir)
   print("ccdocker: set name       = "..tostring(name))
   this.fo.name = name
   print("ccdocker: set maintainer = "..tostring(maintainer))
-  this.fo.maintainer = base64.encode(maintainer)
+  this.fo.maintainer = maintainer
   print("ccdocker: set version    = "..tostring(version))
   this.fo.version = version
 
