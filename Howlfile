@@ -1,0 +1,18 @@
+--[[
+  Howlfile for ccDocker, thanks most to @SquidDev
+]]
+
+Sources:Main "cli/ccdocker.lua"
+  :Depends "json"
+  :Depends "sha256"
+  :Depends "docker"
+Sources:File "ext/json.lua"
+  :Name "json"
+Sources:File "ext/sha256.lua"
+  :Name "sha256"
+Sources:File "lib/docker.lua"
+  :Name "docker"
+
+Tasks:Clean("clean", "build")
+Tasks:Combine("combine", Sources, "build/ccdocker", {"clean"}):Verify()
+Tasks:Minify("minify", "build/ccdocker", "build/ccdocker.min")

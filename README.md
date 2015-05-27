@@ -12,11 +12,18 @@ The magic of setfenv and getfenv.
 
 ## Setup
 
-First, download the git sources into /docker
+Download a github release!
 
-i.e git clone <url> docker
+-- or --
 
-Then you may access the ccdocker script, as well as the docker library. (soon to be name ccdocker.)
+Pull from source.
+Then, in the folder run
+
+```
+pastebin get uHRTm9hp Howl
+```
+
+Now run howl combine, and check `build`!
 
 ## USAGE
 

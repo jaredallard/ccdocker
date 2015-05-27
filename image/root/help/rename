@@ -1,4 +1,0 @@
-rename renames a file or directory.
-
-ex:
-"rename foo bar" renames the file "foo" to "bar".
