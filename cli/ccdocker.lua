@@ -396,11 +396,6 @@ end
 
 function main(...)
   local Args = {...}
-
-  if Args[1] ~= nil then
-    Args = Args[1]
-  end
-
   if Args == nil or Args[1] == nil then
     doHelp()
     return
