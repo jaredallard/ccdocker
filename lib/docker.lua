@@ -58,20 +58,30 @@ end
 local docker = {}
 docker.fs = {}
 docker.shell = {}
-docker.version = "0.1.1"
+docker.version = "0.1.2"
 
 docker.init = function(this)
   docker.checkArgs(this)
 end
 
 docker.checkArgs = function(this)
-  if this == nil then
+  if this == nil or type(this) ~= 'table' then
     error("call with :")
+  end
+
+  if type(this.checkArgs) ~= "function" then
+    error("invalid object supplied, not using : ?")
   end
 end
 
-docker.pullImage = function(this)
+docker.pullImage = function(this, image)
   docker.checkArgs(this)
+
+
+end
+
+docker.pushImage = function(this, image)
+  docker.checkArgs(this, image)
 end
 
 docker.dPrint = function(this, msg)
@@ -266,7 +276,7 @@ docker.fs.write = function (this, f, d)
   no.isDir = false
   no.s = 0
   no.n = filename
-  no.data = base64.encode(d)
+  no.d = base64.encode(d)
 
   this.fo.i[fs.combine("", f)] = no
 
@@ -282,7 +292,19 @@ docker.fs.readAll = function (this, f)
     return nil
   end
 
-  return base64.decode(this.fo.i[fs.combine("", f)].data)
+  if this.fs.isdir(this, f) == true then
+    error("can't open directory, not a file.")
+  else
+    this:dPrint("fs: "..tostring(f).." is not a directory ")
+  end
+
+  if this.fo.i[fs.combine("", f)].d == nil then
+    this:dPrint("fs: the file data attr was nil, this will end badly.")
+    this:dPrint("fs: attempting to use the old .data specification")
+
+  end
+
+  return base64.decode((this.fo.i[fs.combine("", f)].d or this.fo.i[fs.combine("", f)].data ))
 end
 
 docker.fs.getSize = function (this, f)
@@ -299,11 +321,13 @@ end
 
 docker.fs.copy = function (this, fp, tp)
   if this.fs.exists(this,fp) ~= true then
-    error("No such file")
+    this:dPrint("fs: copy failed, file doesn't exist.")
+    return nil
   end
 
   if this.fs.exists(this,tp) == true then
-    error("File exists")
+    this:dPrint("fs: copy failed, already exists")
+    return nil
   end
 
   this:dPrint("fs: copying "..fp.." to "..tp)
@@ -314,8 +338,8 @@ docker.fs.copy = function (this, fp, tp)
 end
 
 docker.fs.delete = function (this, p)
-  if this.fs.exists(this,p) ~= true then
-    error("No such file")
+  if this.fs.exists(this, p) ~= true then
+  return nil
   end
 
   this:dPrint("fs: delete '"..fs.combine("", p).."'")
@@ -325,19 +349,13 @@ docker.fs.delete = function (this, p)
   return nil
 end
 
-docker.fs.close = function ()
-  fstr = fs.open(image, "w")
-  fstr.write(json:encode(fo))
-  fstr.close()
-end
-
 docker.fs.move = function (this, fp, tp)
   if this.fs.exists(this,fp) ~= true then
-    error("No such file")
+    return nil
   end
 
   if this.fs.exists(this,tp) == true then
-    error("File exists")
+    return nil
   end
 
   this.fo.i[fs.combine("", tp)] = deepcopy(this.fo.i[fp])
@@ -363,6 +381,15 @@ docker.chroot = function(this, image)
 
   -- build the "chroot" enviroment
   env = {
+      -- IMPORTANT: this breaks the sandbox and is FOR DEBUGGING ONLY
+      ['__index'] = function(_, k)
+      if not sandbox[k] then
+          print(k .. ': is not sandboxed')
+          return getfenv(2)[k]
+        else
+          return sandbox[k]
+        end
+      end,
       -- important functions
       ["print"] = print,
       ["printError"] =  printError,
@@ -380,8 +407,26 @@ docker.chroot = function(this, image)
 
         fc = this.fs.readAll(this, path)
         f = loadstring(fc)
-        setfenv(f, getfenv(2))
+        setfenv(f, env)
         f() -- execute it
+      end,
+      ["loadfile"] = function(path)
+        if this.fs.exists(this, path) == false then
+          error("No such file")
+        end
+
+        if this.fs.isdir(this, path) then
+          error("Is directory")
+        end
+
+        this:dPrint("loadfile: "..path)
+
+        fc = this.fs.readAll(this, path)
+        f = loadstring(fc, path)
+        setfenv(f, env)
+
+        -- return the object
+        return f
       end,
       ["loadstring"] = deepcopy(loadstring),
       ["ipairs"]    = ipairs,
@@ -393,6 +438,7 @@ docker.chroot = function(this, image)
       ["pcall"]     = pcall, -- for now
       ["xpcall"]    = xpcall,
       ["type"]      = type,
+      ["assert"]    = assert,
       ["tonumber"]  = tonumber,
       ["tostring"]  = tostring,
       ["setmetatable"] = setmetatable,
@@ -489,7 +535,10 @@ docker.chroot = function(this, image)
             local file = oFile
             local mode = oMode
 
-            -- this.fs.close(this)
+            this:dPrint("writing the file to disk, "..tostring(image))
+            fstr = fs.open(image, "w")
+            fstr.write(json:encode(this.fo))
+            fstr.close()
 
             this:dPrint("close file handle on "..file)
           end
@@ -518,8 +567,10 @@ docker.chroot = function(this, image)
       ["os"]        = deepcopy(os),
       ["http"]      = deepcopy(http),
       ["pocket"]    = pocket,
+      ["bit"]       = deepcopy(bit),
       ["help"]      = deepcopy(help),
       ["multishell"] = deepcopy(multishell),
+      ["paintutils"] = paintutils,
       ["peripheral"] = deepcopy(peripheral),
       ["debug"]     = {}, -- reset it.
 
@@ -546,8 +597,26 @@ docker.chroot = function(this, image)
 
             this:dPrint("write data to "..file)
 
-            -- write the data
-            return this.fs.write(this, file, data)
+            if mode == "a" then
+              this:dPrint("fs: [write] appending. mode = a")
+              return this.fs.write(this, file, this.fs.readAll(this, file)..data)
+            else
+              -- why the fuck is this a function, stop being lazy kids.
+              return this.fs.write(this, file, data)
+            end
+          end
+
+          function fobj.writeLine(data)
+            local file = oFile
+            local mode = oMode
+
+            if mode == "a" then
+              this:dPrint("fs: [writeLine] appending a line. mode = a")
+              return this.fs.write(this, file, this.fs.readAll(this, file)..data.."\n")
+            else
+              -- why the fuck is this a function, stop being lazy kids.
+              return this.fs.write(this, file, data.."\n")
+            end
           end
 
           function fobj.readAll()
@@ -557,13 +626,45 @@ docker.chroot = function(this, image)
             return this.fs.readAll(this, file)
           end
 
+          local i = 0;
+          function fobj.readLine(that)
+            local file = file
+
+            this:dPrint("fs: [readLine] called.")
+
+            fc = this.fs.readAll(this, file)
+
+
+            local s = string.split(fc, "\n")
+            i = i + 1
+            this:dPrint("fs: [readLine] line threshold is "..i)
+            for k, v in ipairs(s) do
+                if k == i then
+                  this:dPrint("fs: [readLine] return "..tostring(v))
+                  return tostring(v)
+                end
+            end
+
+            return nil
+          end
+
           function fobj.close()
             local file = oFile
             local mode = oMode
 
-            this.fs.close(this)
+            this:dPrint("writing the file to disk, "..tostring(image))
+
+            fstr = fs.open(image, "w")
+            fstr.write(json:encode(this.fo))
+            fstr.close()
 
             this:dPrint("close file handle on "..file)
+          end
+
+          -- symlink.
+          fobj.flush = function()
+            fobj.close()
+            this:dPrint("fs: was just flushed. Not closed.")
           end
 
           return fobj;
@@ -696,6 +797,9 @@ docker.chroot = function(this, image)
   -- global hijack?
   env._G = env
 
+  print("ccdocker: running "..this.fo.name..":"..this.fo.version)
+  print("ccdocker: invoke init => "..this.fo.init)
+
   if this.fs.exists(this, this.fo.init) ~= true then
     error("image init doesn't exist")
   end
@@ -703,9 +807,6 @@ docker.chroot = function(this, image)
   -- load the files contents
   local o = loadstring(this.fs.readAll(this, this.fo.init))
   setfenv(o, env)
-
-  print("ccdocker: running "..this.fo.name..":"..this.fo.version)
-  print("ccdocker: invoke init => "..this.fo.init)
 
   -- call it.
   this:dPrint("init: execute "..tostring(this.fo.init))
@@ -786,6 +887,22 @@ docker.makeImage = function(this, dir)
     local i = 0
     local files = {}
     function walk(direct, from, to)
+      if fs.isDir(direct) == false then
+        local a = string.sub(direct, #dir, #direct)
+        local b = string.gsub(a, "/"..from, to)
+        local c = fs.getName(direct)
+
+        table.insert( files, {
+          odir = fs.getDir(direct),
+          rdir = fs.getDir(b),
+          name = c
+        })
+
+        -- we don't do anything else, we are one file.
+        return
+      end
+
+      -- is a dir
       for k, c in pairs(fs.list(direct)) do
         if fs.isDir(fs.combine(direct, c)) ~= false then
           walk(fs.combine(direct, c), from, to)
@@ -803,7 +920,7 @@ docker.makeImage = function(this, dir)
     end
 
     if cmd == "ADD" then
-      local from = string.match(arg, "([a-zA-Z/]+)")
+      local from = string.match(arg, "([a-zA-Z/\.]+)")
       local to = string.match(arg, " (.+)")
 
       print("ADD "..from.." TO "..to)
@@ -829,19 +946,14 @@ docker.makeImage = function(this, dir)
 
         local time_s = string.match(os.clock(), "([0-9]+)\.")
 
-        if math.floor(time_s - start) > 3 then
-          print("NOTICE: Yeilding for 1 second.")
-          os.sleep(0)
-          start = string.match(os.clock(), "([0-9]+)\.")
-          print("NOTICE: Yeild finished.")
-        end
-
         -- read the file
         local ch = fs.open(fs.combine(v.odir, v.name), "r")
         local c = ch.readAll()
         ch.close()
 
         this.fs.write(this, fs.combine(v.rdir, v.name), c)
+
+        os.sleep(0)
       end
     elseif cmd == "ENTRYPOINT" then
       this.fo.init = tostring(arg)
@@ -864,6 +976,7 @@ docker.makeImage = function(this, dir)
 
   print("finished.")
 end
+
 
 -- initialize the ccdocker library
 docker:init()

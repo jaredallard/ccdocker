@@ -1,14 +1,20 @@
+
+[![License (MIT)](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](http://opensource.org/licenses/MIT)
+[![Language (Lua)](https://img.shields.io/badge/powered_by-Lua-blue.svg?style=flat-square)](https://lua.org)
+[![Platform (ComputerCraft)](https://img.shields.io/badge/platform-ComputerCraft-blue.svg?style=flat-square)](http://www.computercraft.info/)
+
+
 # ccdocker
 
 A Docker-like application for ComputerCraft!
 
 ## What does it do?
 
-It emulates operating systems and programs in shipable containers.
+It emulates operating systems and programs in shipable containers/images.
 
 ## How does it do it?
 
-The magic of setfenv and getfenv.
+The magic of `setfenv` and `getfenv`.
 
 ## Setup
 
@@ -23,7 +29,11 @@ Then, in the folder run
 pastebin get uHRTm9hp Howl
 ```
 
-Now run howl combine, and check `build`!
+Now run `Howl combine`, and check `build`!
+
+**OPTIONAL**: Run `Howl minify` to minify the release!
+
+**Even better**: Run `Howl combine minify` to do them both!
 
 ## USAGE
 
@@ -44,7 +54,7 @@ Commands:
 
 ## Developers
 
- * Jared Allard &lt;rainbowdashdc&amp;pony.so&gt;
+ * Jared Allard &lt;rainbowdashdc(at)pony.so&gt;
 
 ## License
 

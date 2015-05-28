@@ -6,6 +6,12 @@
  Version: 0.0.1
 ]]
 
+-- Arguments
+local Args = {...}
+
+-- config
+local server = "192.168.1.4"
+
 -- fcs16
 local fcs16 = {}
 
@@ -53,12 +59,7 @@ function fcs16.hash(str) -- Returns FCS16 Hash of @str
     return  bit.bxor(uFcs16, 65535)
 end
 
--- Arguments
-local Args = {...}
-
--- config
-local server = "73.42.212.100"
-
+-- copu originals.
 local oprint = print
 local write = term.write
 
@@ -393,28 +394,41 @@ local function runImage(server, image)
   return true -- probably all went well.
 end
 
-if Args[1] == nil then
-  doHelp()
-  return
+function main(...)
+  local Args = {...}
+
+  if Args[1][1] ~= nil then
+    Args = Args[1]
+  end
+
+  if Args == nil or Args[1] == nil then
+    doHelp()
+    return
+  end
+
+  if Args[1] == "pull" then
+    pullImage(server, Args[2])
+  elseif Args[1] == "push" then
+    pushImage(server, Args[2])
+  elseif Args[1] == "run" then
+    runImage(server, Args[2])
+  elseif Args[1] == "version" then
+    print(docker.version)
+  elseif Args[1] == "build" then
+    buildImage(Args[2])
+  elseif Args[1] == "register" then
+    register(server)
+  elseif Args[1] == "rmi"  then
+    removeImage(server, Args[2])
+  elseif Args[1] == "help" then
+    doHelp()
+    return
+  else
+    doHelp()
+  end
 end
 
-if Args[1] == "pull" then
-  pullImage(server, Args[2])
-elseif Args[1] == "push" then
-  pushImage(server, Args[2])
-elseif Args[1] == "run" then
-  runImage(server, Args[2])
-elseif Args[1] == "version" then
-  print(docker.version)
-elseif Args[1] == "build" then
-  buildImage(Args[2])
-elseif Args[1] == "register" then
-  register(server)
-elseif Args[1] == "rmi"  then
-  removeImage(server, Args[2])
-elseif Args[1] == "help" then
-  doHelp()
-  return
-else
-  doHelp()
-end
+--[[
+  This enables non-TARDIX support.
+]]
+if not run or not threading or not unsafe then main(Args) end
