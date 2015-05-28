@@ -397,7 +397,7 @@ end
 function main(...)
   local Args = {...}
 
-  if Args[1][1] ~= nil then
+  if Args[1] ~= nil then
     Args = Args[1]
   end
 
@@ -431,4 +431,4 @@ end
 --[[
   This enables non-TARDIX support.
 ]]
-if not run or not threading or not unsafe then main(Args) end
+if not run or not threading or not unsafe then main(...) end
