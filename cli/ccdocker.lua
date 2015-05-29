@@ -10,7 +10,7 @@
 local Args = {...}
 
 -- config
-local server = "192.168.1.4"
+local server = "73.221.24.218"
 
 -- fcs16
 local fcs16 = {}
