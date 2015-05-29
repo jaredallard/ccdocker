@@ -1,5 +1,5 @@
 --[[
-  Introcuding, docker. For computercraft
+  Introducing, docker. For computercraft
 
   @author RainbowDashDC <rainbowdashdc@pony.so>
   @version 0.1.1 (sematic)
@@ -85,9 +85,9 @@ docker.pushImage = function(this, image)
 end
 
 docker.dPrint = function(this, msg)
-  local h = fs.open("docker.log", "a")
+  --[[local h = fs.open("docker.log", "a")
   h.write(tostring(msg).."\n")
-  h.close()
+  h.close()]]--
 
   return nil -- nothing for now
 end
@@ -381,15 +381,6 @@ docker.chroot = function(this, image)
 
   -- build the "chroot" enviroment
   env = {
-      -- IMPORTANT: this breaks the sandbox and is FOR DEBUGGING ONLY
-      ['__index'] = function(_, k)
-      if not sandbox[k] then
-          print(k .. ': is not sandboxed')
-          return getfenv(2)[k]
-        else
-          return sandbox[k]
-        end
-      end,
       -- important functions
       ["print"] = print,
       ["printError"] =  printError,
@@ -432,9 +423,6 @@ docker.chroot = function(this, image)
       ["ipairs"]    = ipairs,
       ["pairs"]     = pairs,
       ["setfenv"]   = setfenv, -- for now
-      ["getfenv"]   = function()
-        return env
-      end, -- for now as well
       ["pcall"]     = pcall, -- for now
       ["xpcall"]    = xpcall,
       ["type"]      = type,
@@ -793,6 +781,8 @@ docker.chroot = function(this, image)
     setfenv(o, oenv)
     o(unpack(params))
   end
+
+  env.getfenv = getfenv -- not safe.
 
   -- global hijack?
   env._G = env

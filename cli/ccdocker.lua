@@ -1,5 +1,5 @@
  --[[
- Make a docker image!
+ Utilize the ccdocker library!
 
  Author: Jared Allard <rainbowdashdc@pony.so>
  License: MIT
@@ -287,7 +287,6 @@ local function pushImage(url, image)
       return false
     end
   else
-    print("FAIL", "red")
     term.write("FATA", "red")
     print("[0014] Failed to parse the APIs response.")
 
@@ -333,6 +332,8 @@ local function register(url)
     username = un,
     password = sha256(pass)
   }))
+
+  print(tostring(r.readAll()))
 
   local rj =  json:decode(r.readAll())
 
