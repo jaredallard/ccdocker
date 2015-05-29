@@ -467,6 +467,8 @@ docker.chroot = function(this, image)
       ["colors"]    = colors,
       ["textutils"] = textutils,
       ["colours"]   = colours,
+      ["rednet"]    = rednet,
+      ["modem"]     = modem,
       ["io"]        = {
         open = function(file, mode)
           if mode == nil then -- default is r
