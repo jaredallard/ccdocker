@@ -10,6 +10,7 @@
 local Args = {...}
 
 -- config
+-- MUST BE x.x.x.x or mydomain.com or x.x.x.x:port etc
 local server = "192.241.220.134:81"
 
 -- fcs16
@@ -123,24 +124,28 @@ local function pullImage(url, image)
   end
 
   -- use fs.combine to make parsing a bit easier.
-  local url = "http://" .. fs.combine(tostring(url), "")
-  local apiv = http.get(url.."/api/version")
+  local url = "http://" .. url
+  local apiv,err = http.get(url.."/api/version")
 
   if apiv == nil then
     term.write("FATA", "red")
     print("[0001] Couldn't communicate with the API.")
+
+    print("Err: "..err);
+    print("API: "..url);
 
     return false
   end
 
   -- determine if we were given a flag.
   local v = string.match(image, ".+:([0-9\.a-zA-Z]+)")
-  local s = string.match(image, "(.+):[0-9\.a-zA-Z]+")
+  local s = string.match(image, "([a-zA-Z0-9\-\_\\\/]+)")
 
-  if v == nil then
+  if v == nil or v == "" then
     vh = ""
     v = "latest"
     s = image
+    image = s .. "/" .. v
   else
     vh = v..": "
     image = s .. "/" .. v
@@ -149,14 +154,16 @@ local function pullImage(url, image)
   local user = string.match(s, "(.+)/.+")
   local img = string.match(s, ".+/(.+)")
 
-  print(vh.."Pulling image "..tostring(s))
+  print(vh.."Pulling image "..tostring(s)..":"..tostring(v))
   local fh = fs.open(image, "r")
-  local r = http.get(url.."/pull/"..image)
+  local r,e = http.get(url.."/pull/"..image)
 
   -- check if nil before attempting to parse it.
   if r == nil then
     term.write("FATA", "red")
     print("[0008] Error: image "..tostring(s).." not found")
+
+    print("Err: "..e)
 
     return false
   end
@@ -373,12 +380,22 @@ local function runImage(server, image)
 
   if fs.exists(image) == false then
     local v = string.match(image, ".+:([0-9\.a-zA-Z]+)")
-    local s = string.match(image, "(.+):[0-9\.a-zA-Z]+")
+    local s = string.match(image, "([a-zA-Z0-9\-\_\\\/]+)")
     local user = string.match(s, "(.+)/.+")
     local img = string.match(s, ".+/(.+)")
 
-    if fs.exists("/var/ccdocker/"..user.."/"..img.."/"..v.."/docker.fs") == false then
-      print("Unable to find image '"..image.."' locally.")
+    if v == nil or v == "" then
+      vh = ""
+      v = "latest"
+      s = image
+      image = s .. "/" .. v
+    else
+      vh = v..": "
+      image = s .. "/" .. v
+    end
+
+    if fs.exists("/var/ccdocker/"..tostring(user).."/"..tostring(img).."/"..tostring(v).."/docker.fs") == false then
+      print("Unable to find image '"..tostring(image).."' locally.")
       if pullImage(server, image) ~= true then
         return false
       end
