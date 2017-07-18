@@ -1,8 +1,8 @@
 --[[
   Introducing, docker. For computercraft
 
-  @author RainbowDashDC <rainbowdashdc@pony.so>
-  @version 0.1.1 (sematic)
+  @author Jared Allard <jared@staymarta.com>
+  @version 1.0
   @license MIT
 ]]
 
@@ -58,7 +58,7 @@ end
 local docker = {}
 docker.fs = {}
 docker.shell = {}
-docker.version = "0.1.2"
+docker.version = "1.0"
 
 docker.init = function(this)
   docker.checkArgs(this)
@@ -812,10 +812,13 @@ docker.makeImage = function(this, dir)
   docker.checkArgs(this, dir)
 
   if fs.exists(dir) == false then
+    print(dir)
     error("directory not found")
   end
 
-  if fs.exists(fs.combine(dir, "CCDockerfile")) == false then
+  local CCDockerfile = fs.combine(dir, "CCDockerfile")
+  if fs.exists(CCDockerfile) == false then
+    print(CCDockerfile)
     error("CCDockerfile not found")
   end
 

@@ -11,7 +11,7 @@ local Args = {...}
 
 -- config
 -- MUST BE x.x.x.x or mydomain.com or x.x.x.x:port etc
-local server = "192.241.220.134:81"
+local server = "127.0.0.1:8081"
 
 -- fcs16
 local fcs16 = {}
@@ -151,19 +151,20 @@ local function pullImage(url, image)
     image = s .. "/" .. v
   end
 
-  local user = string.match(s, "(.+)/.+")
-  local img = string.match(s, ".+/(.+)")
+  local userFriendlyImage = s..":"..v
 
-  print(vh.."Pulling image "..tostring(s)..":"..tostring(v))
+  print(vh.."Pulling image "..userFriendlyImage)
   local fh = fs.open(image, "r")
   local r,e = http.get(url.."/pull/"..image)
 
   -- check if nil before attempting to parse it.
   if r == nil then
     term.write("FATA", "red")
-    print("[0008] Error: image "..tostring(s).." not found")
+    print("[0008] Error: image "..userFriendlyImage.." not found")
 
     print("Err: "..e)
+    print("Image: "..image)
+    print("Api: "..url)
 
     return false
   end
@@ -184,23 +185,25 @@ local function pullImage(url, image)
     return false
   end
 
+  local imageLocation = "/var/ccdocker/"..s.."/"..v.."/docker.fs"
   if fs.exists("/var/ccdocker") then
     fs.makeDir("/var")
     fs.makeDir("/var/ccdocker")
   end
 
-  if fs.exists("/var/ccdocker/"..user.."/"..img.."/"..v.."/docker.fs") then
-    fs.delete("/var/ccdocker/"..user.."/"..img.."/"..v.."/docker.fs")
+  if fs.exists(imageLocation) then
+    fs.delete(imageLocation)
   end
 
-  local fh = fs.open("/var/ccdocker/"..user.."/"..img.."/"..v.."/docker.fs", "w")
+  local fh = fs.open(imageLocation, "w")
   fh.write(fc)
   fh.close()
 
   local f16h = fcs16.hash(fc)
   print("")
   print("Digest: fcs16:"..f16h)
-  print("Status: Downloaded newer image for "..tostring(img)..":"..tostring(v))
+  print("Status: Downloaded newer image for "..userFriendlyImage)
+  print("Loc: "..imageLocation)
 
   return true
 end
@@ -221,7 +224,7 @@ local function pushImage(url, image)
   end
 
   -- use fs.combine to make parsing a bit easier.
-  local url = "http://" .. fs.combine(tostring(url), "")
+  local url = "http://" .. url
   local apiv = http.get(url.."/api/version")
 
   if apiv == nil then
@@ -231,44 +234,9 @@ local function pushImage(url, image)
     return false
   end
 
-  term.write("Username: ", "lightGray")
-  local un = read()
-
-  term.write("Password: ", "lightGray")
-  local pass = read("*")
-
-  term.write("checking credentials ... ")
-  local r = http.post(url.."/auth", json:encode({
-    username = un,
-    password = sha256(pass)
-  }))
-
-  -- decode and then close the io stream
-  local rf =  json:decode(r.readAll())
-  r.close()
-
-  if rf ~= nil then
-    if rf.token ~= nil then
-      print("OK", "green")
-    else
-      print("FAIL", "red")
-      term.write("FATA", "red")
-      print("[0009] Error: Couldn't authenticate. Wrong password?")
-
-      return false
-    end
-  else
-    print("FAIL", "red")
-    term.write("FATA", "red")
-    print("[0010] Bad API response.")
-
-    return false
-  end
-
-
   term.write("uploading image ... ")
   local fh = fs.open(image, "r")
-  local r = http.post(url.."/push", un..":"..rf.token.."\n"..fh.readAll())
+  local r = http.post(url.."/push", fh.readAll())
 
   -- preparse check
   if r == nil then
@@ -300,77 +268,12 @@ local function pushImage(url, image)
     return false
   end
 
-  term.write("verifying it was uploaded ... ")
-  print("OK", "green")
-
   return true
 end
 
 local function register(url)
-  -- use fs.combine to make parsing a bit easier.
-  local url = "http://" .. fs.combine(tostring(url), "")
-  local apiv = http.get(url.."/api/version")
-
-  if apiv == nil then
-    term.write("FATA", "red")
-    print("[0001] Couldn't communicate with the API.")
-
-    return false
-  end
-
-  term.write("Username: ", "lightGray")
-  local un = read()
-
-  term.write("Password: ", "lightGray")
-  local pass = read("*")
-
-  term.write("Confirm Password: ", "lightGray")
-  local charpass = read("*")
-
-  if pass ~= charpass then
-    term.write("FATA", "red")
-    print("[0000] Passwords do not match.")
-
-    return false
-  end
-
-  term.write("attempting to register ... ")
-  local r = http.post(url.."/register", json:encode({
-    username = un,
-    password = sha256(pass)
-  }))
-
-  print(tostring(r.readAll()))
-
-  local rj =  json:decode(r.readAll())
-
-  if rj == nil then
-    print("FAIL", "red")
-    term.write("FATA", "red")
-    print("[0015] Failed to parse the APIs response")
-
-    return false
-  end
-
-  r.close() -- close the handle
-  if rj ~= nil then
-    if rj.success == true then
-      print("OK", "green")
-    else
-      print("FAIL", "red")
-      term.write("FATA", "red")
-      print("[" .. (rj.code or '0011') .. "] Error: "..rj.error)
-
-      return false
-    end
-  else
-    print("FAIL", "red")
-    term.write("FATA", "red")
-    print("[0013] Failed to parse the APIs response.")
-
-    return false
-  end
-
+  term.write("FATA", "red")
+  print("[0001] Registration Disabled.")
 end
 
 local function runImage(server, image)
@@ -385,18 +288,23 @@ local function runImage(server, image)
     local img = string.match(s, ".+/(.+)")
 
     if v == nil or v == "" then
-      vh = ""
       v = "latest"
       s = image
       image = s .. "/" .. v
     else
-      vh = v..": "
       image = s .. "/" .. v
     end
 
-    if fs.exists("/var/ccdocker/"..tostring(user).."/"..tostring(img).."/"..tostring(v).."/docker.fs") == false then
-      print("Unable to find image '"..tostring(image).."' locally.")
-      if pullImage(server, image) ~= true then
+    local userFriendlyImage = s .. ':' .. v
+    local imageLocation     = "/var/ccdocker/"..s.."/"..v.."/docker.fs"
+
+    print('img '..s)
+
+    if fs.exists(imageLocation) == false then
+      print("Unable to find image '"..userFriendlyImage.."' locally.")
+
+      print("Not at: '"..imageLocation.."'")
+      if pullImage(server, userFriendlyImage) ~= true then
         return false
       end
     else
@@ -404,7 +312,7 @@ local function runImage(server, image)
       print("[0002] Image exists locally.")
     end
 
-    docker.chroot(docker, "/var/ccdocker/"..user.."/"..img.."/"..v.."/docker.fs")
+    docker.chroot(docker, imageLocation)
   else
     docker.chroot(docker, image)
   end
@@ -426,7 +334,19 @@ function main(...)
   elseif Args[1] == "run" then
     runImage(server, Args[2])
   elseif Args[1] == "version" then
-    print(docker.version)
+    local apiv = http.get("http://"..server.."/api/version")
+
+    if apiv == nil then
+      term.write("FATA", "red")
+      print("[0001] Couldn't communicate with the API.")
+
+      return false
+    end
+
+    local rj = json:decode(apiv.readAll())
+
+    print("ccdocker v"..docker.version)
+    print("ccdockerd v"..rj.version)
   elseif Args[1] == "build" then
     buildImage(Args[2])
   elseif Args[1] == "register" then
