@@ -560,6 +560,7 @@ docker.chroot = function(this, image)
       ["bit"]       = deepcopy(bit),
       ["help"]      = deepcopy(help),
       ["multishell"] = deepcopy(multishell),
+      ["shell"] = deepcopy(shell),
       ["paintutils"] = paintutils,
       ["peripheral"] = deepcopy(peripheral),
       ["debug"]     = {}, -- reset it.
