@@ -11,7 +11,7 @@ local Args = {...}
 
 -- config
 -- MUST BE x.x.x.x or mydomain.com or x.x.x.x:port etc
-local server = "127.0.0.1:8081"
+local server = "ccdocker.tritonjs.com"
 
 -- fcs16
 local fcs16 = {}
@@ -128,7 +128,7 @@ local function pullImage(url, image)
   end
 
   -- use fs.combine to make parsing a bit easier.
-  local url = "http://" .. url
+  local url = "https://" .. url
   local apiv,err = http.get(url.."/api/version")
 
   if apiv == nil then
@@ -228,7 +228,7 @@ local function pushImage(url, image)
   end
 
   -- use fs.combine to make parsing a bit easier.
-  local url = "http://" .. url
+  local url = "https://" .. url
   local apiv = http.get(url.."/api/version")
 
   if apiv == nil then
@@ -338,7 +338,7 @@ function main(...)
   elseif Args[1] == "run" then
     runImage(server, Args[2])
   elseif Args[1] == "version" then
-    local apiv = http.get("http://"..server.."/api/version")
+    local apiv = http.get("https://"..server.."/api/version")
 
     if apiv == nil then
       term.write("FATA", "red")

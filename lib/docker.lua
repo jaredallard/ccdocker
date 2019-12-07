@@ -932,8 +932,8 @@ docker.makeImage = function(this, dir, name)
   this.fo.name = name
   print("ccdocker: set maintainer = "..tostring(maintainer))
   this.fo.maintainer = maintainer
-  print("ccdocker: set version    = "..tostring(version))
-  this.fo.version = version
+  print("ccdocker: set version    = latest")
+  this.fo.version = "latest"
 
   print("ccdocker: write to file")
   fsfh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "w")
