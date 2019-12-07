@@ -54,7 +54,7 @@ Commands:
 
 ## Developers
 
- * Jared Allard &lt;rainbowdashdc(at)pony.so&gt;
+ * Jared Allard &lt;jaredallard(at)outlook.com&gt;
 
 ## License
 
