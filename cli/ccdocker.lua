@@ -104,12 +104,16 @@ local function doHelp()
   print(" help     Show this help")
 end
 
-local function buildImage(image)
+local function buildImage(image, name)
   if image == nil then
     error("missing param 1 (image)")
   end
 
-  docker.makeImage(docker, image)
+  if name == nil then
+    error("missing param 2 (name)")
+  end
+
+  docker.makeImage(docker, image, name)
 end
 
 local function pullImage(url, image)
@@ -348,7 +352,7 @@ function main(...)
     print("ccdocker v"..docker.version)
     print("ccdockerd v"..rj.version)
   elseif Args[1] == "build" then
-    buildImage(Args[2])
+    buildImage(Args[2], Args[3])
   elseif Args[1] == "register" then
     register(server)
   elseif Args[1] == "rmi"  then

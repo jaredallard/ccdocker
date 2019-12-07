@@ -40,6 +40,43 @@ local function tokenise( ... )
     return tWords
 end
 
+-- walk through a directory and get a list of files in it
+function walk(direct, dir, from, to)
+  local files = {}
+  if fs.isDir(direct) == false then
+    local a = string.sub(direct, #dir, #direct)
+    local b = string.gsub(a, "/"..from, to)
+    local c = fs.getName(direct)
+
+    table.insert(files, {
+      odir = fs.getDir(direct),
+      rdir = fs.getDir(b),
+      name = c
+    })
+
+    -- we don't do anything else, we are one file.
+    return files
+  end
+
+  -- is a dir
+  for k, c in pairs(fs.list(direct)) do
+    if fs.isDir(fs.combine(direct, c)) ~= false then
+      walk(fs.combine(direct, c), from, to)
+    else
+      local a = string.sub(direct, #dir, #direct)
+      local b = string.gsub(a, "/"..from, to)
+
+      table.insert(files, {
+        odir = direct,
+        rdir = b,
+        name = c
+      })
+    end
+  end
+
+  return files
+end
+
 -- split a string
 function string:split(delimiter)
   local result = { }
@@ -809,7 +846,7 @@ end
 --[[
   TODO: Use standardized FS functions, not locales.
 ]]
-docker.makeImage = function(this, dir)
+docker.makeImage = function(this, dir, name)
   docker.checkArgs(this, dir)
 
   if fs.exists(dir) == false then
@@ -823,55 +860,23 @@ docker.makeImage = function(this, dir)
     error("CCDockerfile not found")
   end
 
-  fh = io.open(fs.combine(dir, "CCDockerfile"), "r")
 
-  local name, version, maintainer
-  local i = 0
-  for line in fh:lines() do
-    i = i+1 -- line number
-
-    -- loop locals
-    local cmd = string.match(line, "([A-Z]+)")
-    local arg = string.match(line, " (.+)")
-
-    -- most important ones
-    if i == 1 then
-      if cmd ~= "NAME" then
-        error("line 1, expected NAME")
-      else
-        name = arg
-      end
-    elseif i == 2 then
-      if cmd ~= "VERSION" then
-        error("line 2, expected VERSION")
-      else
-        version = arg
-      end
-    elseif i == 3 then
-      if cmd ~= "MAINTAINER" then
-        error("line 3, expected MAINTAINER")
-      else
-        maintainer = arg
-
-        -- end the loop, we're out of giving fucks.
-        break
-      end
-    end
-  end
-
+  -- cleanup the existing file system, if it exists
   if fs.exists(fs.combine(dir, "rootfs.ccdocker.fs")) then
     print("NOTICE: removing old fs")
     fs.delete(fs.combine(dir, "rootfs.ccdocker.fs"))
   end
-
-  print("building "..name..":"..version)
   this.genFS(this, fs.combine(dir, "rootfs.ccdocker.fs"))
 
-  local fhhh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "r")
-  this.fo = json:decode(fhhh.readAll())
-  fhhh.close()
+  local fsfh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "r")
+  this.fo = json:decode(fsfh.readAll())
+  fsfh.close()
 
-  -- parse the manifest again.
+  local maintainer
+  local i = 0
+
+  print("building "..name)
+  local fh = io.open(fs.combine(dir, "CCDockerfile"), "r")
   for line in fh:lines() do
     i = i+1 -- line number
 
@@ -879,47 +884,16 @@ docker.makeImage = function(this, dir)
     local cmd = string.match(line, "([A-Z]+)")
     local arg = string.match(line, " (.+)")
 
-    -- walk function, omfg it's buggy guys
-    local i = 0
-    local files = {}
-    function walk(direct, from, to)
-      if fs.isDir(direct) == false then
-        local a = string.sub(direct, #dir, #direct)
-        local b = string.gsub(a, "/"..from, to)
-        local c = fs.getName(direct)
-
-        table.insert( files, {
-          odir = fs.getDir(direct),
-          rdir = fs.getDir(b),
-          name = c
-        })
-
-        -- we don't do anything else, we are one file.
-        return
-      end
-
-      -- is a dir
-      for k, c in pairs(fs.list(direct)) do
-        if fs.isDir(fs.combine(direct, c)) ~= false then
-          walk(fs.combine(direct, c), from, to)
-        else
-          local a = string.sub(direct, #dir, #direct)
-          local b = string.gsub(a, "/"..from, to)
-
-          table.insert(files, {
-            odir = direct,
-            rdir = b,
-            name = c
-          })
-        end
-      end
-    end
-
-    if cmd == "ADD" then
-      local from = string.match(arg, "([a-zA-Z/\.]+)")
+    if cmd == "MAINTAINER" then
+      maintainer = arg
+    elseif cmd == "FROM" then
+      term.write("NOTI", "cyan")
+      print("[0002] FROM is unsupported, using scratch")
+    elseif cmd == "ADD" or cmd =="COPY" then
+      local from = string.match(arg, "([a-zA-Z/\\.]+)")
       local to = string.match(arg, " (.+)")
 
-      print("ADD "..from.." TO "..to)
+      print("COPY "..from.." TO "..to)
 
       -- pre-processing
       if to == "/" then
@@ -930,17 +904,13 @@ docker.makeImage = function(this, dir)
         error("file not found")
       end
 
-      local start = string.match(os.clock(), "([0-9]+)\.")
-
       -- TODO: Only walk when fs.isDir()
-      walk(fs.combine(dir, from), from, to)
+      local files = walk(fs.combine(dir, from), dir, from, to)
 
       for i, v in ipairs(files) do
         if fs.exists(fs.combine(v.odir, v.name)) == false then
           error("an error occured [ERRNOTEXISTLOOP]")
         end
-
-        local time_s = string.match(os.clock(), "([0-9]+)\.")
 
         -- read the file
         local ch = fs.open(fs.combine(v.odir, v.name), "r")
@@ -966,9 +936,9 @@ docker.makeImage = function(this, dir)
   this.fo.version = version
 
   print("ccdocker: write to file")
-  local ffh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "w")
-  ffh.write(json:encode(this.fo))
-  ffh.close()
+  fsfh = fs.open(fs.combine(dir, "rootfs.ccdocker.fs"), "w")
+  fsfh.write(json:encode(this.fo))
+  fsfh.close()
 
   print("finished.")
 end

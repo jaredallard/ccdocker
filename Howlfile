@@ -4,15 +4,12 @@
 
 Sources:Main "cli/ccdocker.lua"
   :Depends "json"
-  :Depends "sha256"
   :Depends "base64"
   :Depends "docker"
 
 -- Ext apis (not ours)
 Sources:File "ext/json.lua"
   :Name "json"
-Sources:File "ext/sha256.lua"
-  :Name "sha256"
 Sources:File "ext/base64.lua"
   :Name "base64"
 
